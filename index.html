@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meu Ônibus</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15171a" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=Doto:wght@800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --paper: #ffffff; --ink: #1c1f24; --muted: #6b7079; --faint: #b4b9c0; --rule: #e6e8eb;
+    --amber: #ffae1a; --sign: #17140f;
+    --accent: #777;
+    --cond: "Barlow Condensed", "Arial Narrow", sans-serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #15171a; --ink: #e9ebee; --muted: #9096a0; --faint: #4a4f57; --rule: #2a2d33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.45 Barlow, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 520px; margin: 0 auto; padding: 8px 16px 56px; }
+  time { font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 2px; }
+
+  /* linhas: o número é a identidade, a faixa é a cor da linha */
+  .lines { display: flex; gap: 28px; border-bottom: 1px solid var(--rule); }
+  .lines button { text-align: left; padding: 14px 0 12px; border-top: 4px solid transparent; color: var(--faint); min-width: 0; }
+  .lines button[aria-pressed="true"] { border-top-color: var(--c); color: var(--ink); }
+  .lines .n { display: block; font: 700 38px/1 var(--cond); letter-spacing: -.01em; }
+  .lines .name { display: block; font-size: 14px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lines button[aria-pressed="true"] .name { color: var(--muted); }
+
+  .dirs { display: flex; gap: 22px; margin: 14px 0 18px; }
+  .dirs button { font-weight: 500; font-size: 15px; color: var(--muted); padding: 4px 0; border-bottom: 2px solid transparent; }
+  .dirs button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+  /* letreiro de LED, igual à frente do ônibus */
+  .sign { background: var(--sign) radial-gradient(circle, #ffffff0a 1px, transparent 1.4px) 0 0 / 4px 4px;
+          border-radius: 8px; padding: 16px 18px 14px; color: var(--amber); font-family: Doto, monospace; font-weight: 800;
+          text-shadow: 0 0 6px #ffae1a66; text-transform: uppercase; }
+  @media (prefers-color-scheme: dark) { .sign { box-shadow: inset 0 0 0 1px #2c2720; } }
+  .sign-top { display: flex; gap: 14px; font-size: 19px; line-height: 1; white-space: nowrap; overflow: hidden; }
+  .sign-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .sign-main time { font-size: 68px; line-height: .9; letter-spacing: -.02em; }
+  .sign-eta { font-size: 24px; white-space: nowrap; }
+  .sign-msg { font-size: 26px; line-height: 1.1; margin-top: 14px; }
+  .after { margin: 10px 0 0; color: var(--muted); font-size: 15px; }
+  .after time { color: var(--ink); font-weight: 600; }
+
+  h2 { font: 600 15px/1.2 Barlow, sans-serif; margin: 28px 0 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  h2 span { color: var(--muted); font-weight: 400; font-size: 14px; }
+
+  .running button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 0; border-bottom: 1px solid var(--rule); text-align: left; }
+  .running button:first-child { border-top: 1px solid var(--rule); }
+  .mini { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; flex: none; }
+  .mini svg { width: 14px; height: 14px; }
+  .running time { font-weight: 600; }
+  .running .delay { margin-left: auto; color: var(--muted); font-size: 14px; }
+  .running .delay.late { color: #c2410c; }
+
+  #map { height: 300px; margin-top: 12px; border-radius: 8px; background: var(--rule); z-index: 0; }
+  .caption { font-size: 13px; color: var(--muted); margin: 6px 0 0; min-height: 1.2em; }
+  .bus { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); border: 2.5px solid #fff; box-shadow: 0 2px 8px #0005; display: grid; place-items: center; position: relative; }
+  .bus i { position: absolute; inset: -11px; transform: rotate(var(--h)); pointer-events: none; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); }
+  .bus i::before { content: ""; position: absolute; left: 50%; top: 0; margin-left: -6px; border: 6px solid transparent; border-top: 0; border-bottom: 8px solid var(--accent); }
+  .leaflet-container { font-family: Barlow, sans-serif; }
+  .leaflet-popup-content { font-size: 14px; line-height: 1.4; }
+
+  /* horários de hoje */
+  .times { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .times li { border-bottom: 1px solid var(--rule); }
+  .times .t { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 0; text-align: left; }
+  .times time { font: 600 20px/1 var(--cond); letter-spacing: .01em; padding: 3px 7px; border-radius: 4px; }
+  .times .s { margin-left: auto; color: var(--muted); font-size: 15px; }
+  .times .next time { background: var(--ink); color: var(--paper); }
+  .times .next .s { color: var(--ink); font-weight: 600; }
+  .times .live .s { display: flex; align-items: center; gap: 10px; }
+  .times .past { color: var(--faint); }
+  .earlier summary { cursor: pointer; color: var(--muted); font-size: 15px; padding: 10px 0; border-top: 1px solid var(--rule); }
+  .earlier summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .earlier[open] summary { color: var(--ink); }
+  .earlier .times { border-top: 0; }
+  .empty { color: var(--muted); padding: 14px 0; border-top: 1px solid var(--rule); }
+</style>
+</head>
+<body>
+<main>
+  <nav class="lines" id="lines" aria-label="Linha"></nav>
+  <div class="dirs" id="dirs" role="group" aria-label="Sentido"></div>
+  <section id="hero" aria-live="polite"><div class="sign"><div class="sign-msg">Carregando</div></div></section>
+  <section class="running" id="running"></section>
+  <div id="map"></div>
+  <p class="caption" id="updated"></p>
+  <h2>Horários de hoje <span id="svc"></span></h2>
+  <section id="list"></section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const LINES = { '414': 'veli', '324': 'vemu' }; // número -> route_hash da Mobilibus
+const ONLY = { vemu: 'Porto Seguro' };           // route_hash -> só as viagens com esse nome
+const REFRESH_MS = 20000;
+// Mesmo estilo do mapa do site da TCCC. Chave grátis em https://locationiq.com (vazio = OpenStreetMap)
+const LOCATIONIQ_KEY = '';
+
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2, '0');
+const toMin = t => { const [h, m] = t.split(':'); return +h * 60 + +m; };
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+async function api(path) {
+  const r = await fetch('/api/' + path);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// Polyline do Google (formato do campo "shape")
+function decode(str) {
+  const pts = []; let i = 0, lat = 0, lng = 0;
+  while (i < str.length) {
+    for (let k = 0; k < 2; k++) {
+      let b, shift = 0, res = 0;
+      do { b = str.charCodeAt(i++) - 63; res |= (b & 31) << shift; shift += 5; } while (b >= 32);
+      const d = res & 1 ? ~(res >> 1) : res >> 1;
+      k ? (lng += d) : (lat += d);
+    }
+    pts.push([lat / 1e5, lng / 1e5]);
+  }
+  return pts;
+}
+
+function fmtEta(min) {
+  if (min < 1) return 'agora';
+  if (min < 60) return `em ${Math.floor(min)} min`;
+  return `em ${Math.floor(min / 60)}h${pad(Math.floor(min % 60))}`;
+}
+function fmtAgo(min) {
+  min = Math.max(0, Math.floor(min));
+  return min < 60 ? `saiu há ${min} min` : `saiu há ${Math.floor(min / 60)}h${pad(min % 60)}`;
+}
+function fmtDelay(sec) {
+  const m = Math.round(Math.abs(sec) / 60);
+  if (m < 1) return 'no horário';
+  return `${m} min ${sec > 0 ? 'atrasado' : 'adiantado'}`;
+}
+
+let state = { line: store.get('line') in LINES ? store.get('line') : '414', dir: +(store.get('dir') ?? 1) };
+const cache = {};          // route_hash -> { tt, details }
+let live = { assigned: new Map(), vehicles: [] };
+let token = 0;
+
+const pending = {};
+function loadRoute(id) {
+  return pending[id] ??= (async () => {
+    const tt = await api(`timetable?v=2&route_hash=${id}`);
+    const details = Object.fromEntries(await Promise.all(
+      tt.timetable.trips.map(async t => [t.tripId, await api(`trip-details?v=2&trip_hash=${t.tripId}`)])));
+    return cache[id] = { tt, details };
+  })().catch(e => { delete pending[id]; throw e; });
+}
+
+const tripsInDir = tt => tt.timetable.trips.filter(t => t.directionId === state.dir && t.headsign.includes(ONLY[tt.routeId] ?? ''));
+
+function todayDepartures(tt) {
+  const now = new Date(), day = now.getDay();
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const dir = tt.timetable.directions.find(d => d.directionId === state.dir);
+  const trips = tripsInDir(tt);
+  const services = (dir?.services ?? []).filter(s => s.days[day] && s.start <= today && today <= s.end);
+  const deps = services.flatMap(s => s.departures.map(d => ({ ...d, trip: trips.find(t => t.seq === d.seq) })))
+    .filter(d => d.trip)
+    .sort((a, b) => a.dep.localeCompare(b.dep));
+  return { deps, svcName: services.map(s => s.desc).join(' + ') };
+}
+
+async function refreshLive() {
+  const id = LINES[state.line], { tt } = cache[id];
+  const trips = tripsInDir(tt);
+  const [online, ...vehicles] = await Promise.all([
+    api(`timetable-online?route_hash=${id}`),
+    ...trips.map(t => api(`vehicles?trip_hash=${t.tripId}`).then(vs => vs.map(v => ({ ...v, trip: t })))),
+  ]);
+  // timetable-online usa o id numérico; o timetable usa o mesmo id em base 32
+  live.assigned = new Map(online.flatMap(o => o.departures.map(d => [`${o.tripId.toString(32)}|${d.dep}`, d.vehicleId])));
+  live.vehicles = vehicles.flat();
+  $('#updated').textContent = `Posições atualizadas às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+const vehicleFor = d => live.vehicles.find(v => v.trip.tripId === d.trip.tripId && v.startTime === d.dep);
+
+// ---------- mapa ----------
+const map = L.map('map', { zoomControl: false }).setView([-23.42, -51.93], 13);
+if (LOCATIONIQ_KEY) {
+  L.tileLayer(`https://{s}-tiles.locationiq.com/v3/light/r/{z}/{x}/{y}.jpg?key=${LOCATIONIQ_KEY}`,
+    { maxZoom: 18, attribution: '© LocationIQ © OpenStreetMap' }).addTo(map);
+} else { // fundo cinza minimalista + nomes de ruas
+  const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_${n}/MapServer/tile/{z}/{y}/{x}`;
+  L.tileLayer(esri('Base'), { maxZoom: 18, maxNativeZoom: 16, attribution: 'Esri, HERE, Garmin, © OpenStreetMap' }).addTo(map);
+  L.tileLayer(esri('Reference'), { maxZoom: 18, maxNativeZoom: 16 }).addTo(map);
+}
+const routeLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup(), busLayer = L.layerGroup().addTo(map);
+// pontos de parada só aparecem com zoom de perto
+map.on('zoomend', () => map.getZoom() >= 16 ? stopLayer.addTo(map) : stopLayer.remove());
+const BUS_SVG = '<svg viewBox="0 0 24 24" width="17" height="17" fill="#fff" aria-hidden="true"><path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM18 11H6V6h12v5z"/></svg>';
+const busMarkers = {};
+
+function drawRoute() {
+  const { tt, details } = cache[LINES[state.line]];
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+  routeLayer.clearLayers(); stopLayer.clearLayers();
+  const bounds = L.latLngBounds([]);
+  tripsInDir(tt).forEach(t => {
+    const det = details[t.tripId], pts = decode(det.shape);
+    L.polyline(pts, { color: '#fff', weight: 8, opacity: .9, interactive: false }).addTo(routeLayer);
+    bounds.extend(L.polyline(pts, { color, weight: 4, interactive: false }).addTo(routeLayer).getBounds());
+    det.stops.forEach(s => L.circleMarker([s.lat, s.lng], { radius: 3.5, color, weight: 2, fillColor: '#fff', fillOpacity: 1 })
+      .bindTooltip(esc(s.name)).addTo(stopLayer));
+  });
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+}
+
+function drawBuses() {
+  busLayer.clearLayers();
+  for (const k in busMarkers) delete busMarkers[k];
+  live.vehicles.forEach(v => {
+    const icon = L.divIcon({ className: '', iconSize: [32, 32], iconAnchor: [16, 16],
+      html: `<div class="bus" style="--h:${+v.heading || 0}deg"><i></i>${BUS_SVG}</div>` });
+    busMarkers[v.vehicleId] = L.marker([v.lat, v.lng], { icon, zIndexOffset: 1000 })
+      .bindPopup(`<b>Saiu às ${esc(v.startTime)}</b>, ${fmtDelay(v.delay)}<br>Ônibus ${esc(v.vehicleId)}, visto às ${esc(v.positionTime.slice(0, 5))}`)
+      .addTo(busLayer);
+  });
+}
+
+function focusBus(id) {
+  const m = busMarkers[id];
+  if (!m) return;
+  $('#map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  map.setView(m.getLatLng(), 16);
+  m.openPopup();
+}
+
+// ---------- UI ----------
+const DIR_NAMES = { 1: 'Saindo do bairro', 0: 'Saindo do terminal' };
+
+function renderControls() {
+  $('#lines').innerHTML = Object.entries(LINES).map(([num, id]) => {
+    const r = cache[id]?.tt;
+    return `<button data-line="${num}" aria-pressed="${num === state.line}" style="--c:${r?.color ?? '#777'}">
+      <span class="n">${num}</span><span class="name">${esc(ONLY[id] ?? r?.longName ?? '')}</span></button>`;
+  }).join('');
+  $('#dirs').innerHTML = [1, 0].map(d =>
+    `<button data-dir="${d}" aria-pressed="${d === state.dir}">${DIR_NAMES[d]}</button>`).join('');
+  const tt = cache[LINES[state.line]]?.tt;
+  if (tt) document.documentElement.style.setProperty('--accent', tt.color);
+}
+
+// destino como aparece no letreiro
+const destination = tt => state.dir === 1 ? 'Terminal' : (ONLY[tt.routeId] ?? tt.longName);
+const sign = (tt, body) => `<div class="sign"><div class="sign-top"><span>${state.line}</span><span>${esc(destination(tt))}</span></div>${body}</div>`;
+
+function render() {
+  const { tt } = cache[LINES[state.line]];
+  const { deps, svcName } = todayDepartures(tt);
+  const now = nowMin();
+  const nextIdx = deps.findIndex(d => toMin(d.dep) >= Math.floor(now));
+  const next = deps[nextIdx], after = deps[nextIdx + 1];
+
+  // letreiro
+  if (next) {
+    const bus = live.assigned.get(`${next.trip.tripId}|${next.dep}`);
+    $('#hero').innerHTML = sign(tt, `<div class="sign-main"><time>${next.dep}</time><span class="sign-eta">${fmtEta(toMin(next.dep) - now)}</span></div>`) +
+      `<p class="after">${after ? `Próximo horário: <time>${after.dep}</time>` : 'É a última saída de hoje.'}${bus ? `<br>Ônibus ${esc(bus)} já escalado.` : ''}</p>`;
+  } else {
+    $('#hero').innerHTML = sign(tt, `<div class="sign-msg">${deps.length ? 'Sem mais saídas hoje' : 'Não circula hoje'}</div>`);
+  }
+
+  // ônibus na rua
+  const running = live.vehicles.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
+  $('#running').innerHTML = running.length ? `<h2>Na rua agora</h2>` + running.map(v => {
+    const late = v.delay >= 60;
+    return `<button data-bus="${esc(v.vehicleId)}"><span class="mini">${BUS_SVG}</span><span>Saiu às <time>${esc(v.startTime)}</time></span>
+      <span class="delay${late ? ' late' : ''}">${fmtDelay(v.delay)}</span></button>`;
+  }).join('') : '';
+
+  // horários de hoje: os que já passaram (e não estão na rua) ficam escondidos
+  $('#svc').textContent = svcName;
+  const item = (d, i) => {
+    const v = vehicleFor(d), diff = toMin(d.dep) - Math.floor(now);
+    if (v) return `<li><button class="t live" data-bus="${esc(v.vehicleId)}"><time>${d.dep}</time><span class="s">${fmtAgo(now - toMin(d.dep))}<span class="mini">${BUS_SVG}</span></span></button></li>`;
+    const cls = i === nextIdx ? 'next' : diff < 0 ? 'past' : '';
+    return `<li><div class="t ${cls}"><time>${d.dep}</time><span class="s">${diff >= 0 ? fmtEta(toMin(d.dep) - now) : ''}</span></div></li>`;
+  };
+  const rows = deps.map((d, i) => [d, i]);
+  const earlier = rows.filter(([d]) => toMin(d.dep) < Math.floor(now) && !vehicleFor(d));
+  const shown = rows.filter(r => !earlier.includes(r));
+  const wasOpen = $('#list .earlier')?.open;
+  $('#list').innerHTML = !deps.length ? '<p class="empty">Esta linha não tem saídas hoje.</p>' :
+    (earlier.length ? `<details class="earlier"${wasOpen ? ' open' : ''}><summary>Ver ${earlier.length} horário${earlier.length > 1 ? 's' : ''} anterior${earlier.length > 1 ? 'es' : ''}</summary>
+      <ul class="times">${earlier.map(([d, i]) => item(d, i)).join('')}</ul></details>` : '') +
+    `<ul class="times">${shown.map(([d, i]) => item(d, i)).join('')}</ul>`;
+}
+
+async function show() {
+  const my = ++token;
+  store.set('line', state.line); store.set('dir', state.dir);
+  renderControls();
+  try {
+    await loadRoute(LINES[state.line]);
+    if (my !== token) return;
+    renderControls(); drawRoute(); render();
+    await refreshLive();
+    if (my !== token) return;
+    drawBuses(); render();
+  } catch (e) {
+    if (my === token) $('#hero').innerHTML = `<div class="sign"><div class="sign-msg">Sem sinal</div></div>
+      <p class="after">Não deu para falar com o servidor (${esc(e.message)}). Tentando de novo em 20 segundos.</p>`;
+  }
+}
+
+async function tick() {
+  if (document.hidden || !cache[LINES[state.line]]) return;
+  const my = token;
+  try { await refreshLive(); } catch { $('#updated').textContent = 'Sem conexão, tentando de novo.'; }
+  if (my === token) { drawBuses(); render(); }
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-line],[data-dir],[data-bus]');
+  if (!b) return;
+  if (b.dataset.bus) return focusBus(b.dataset.bus);
+  if (b.dataset.line && b.dataset.line !== state.line) { state.line = b.dataset.line; show(); }
+  if (b.dataset.dir && +b.dataset.dir !== state.dir) { state.dir = +b.dataset.dir; show(); }
+});
+document.addEventListener('visibilitychange', () => !document.hidden && tick());
+setInterval(() => cache[LINES[state.line]] ? tick() : show(), REFRESH_MS);
+
+show();
+// carrega a outra linha em segundo plano pra troca ser instantânea
+Object.values(LINES).forEach(id => loadRoute(id).then(renderControls).catch(() => {}));
+</script>
+</body>
+</html>
